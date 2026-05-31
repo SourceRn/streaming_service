@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloneFlix - Arquitectura Distribuida</title>
+    
+    <link rel="stylesheet" href="/static/plyr.css" />
+
+    <style>
+        /* CSS Base */
+        body { background-color: #141414; color: #fff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 0; overflow-x: hidden; }
+        .navbar { background-color: rgba(0, 0, 0, 0.9); padding: 20px 4%; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+        .logo { color: #E50914; font-size: 2rem; font-weight: 900; letter-spacing: 1px; cursor: pointer; }
+        .container { padding: 0 4%; padding-bottom: 50px; }
+        
+        /* Formularios y Botones */
+        .login-box { background-color: rgba(0, 0, 0, 0.75); max-width: 400px; margin: 100px auto; padding: 60px 68px 40px; border-radius: 4px; }
+        input { width: 100%; padding: 16px; margin-bottom: 16px; background: #333; border: none; color: white; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 16px; background-color: #E50914; color: white; border: none; font-weight: bold; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
+        button:hover { background-color: #f40612; }
+        .hidden { display: none !important; }
+
+        /* ==========================================
+           ARQUITECTURA DE GRILLAS (FLEXBOX CENTRADO)
+           ========================================== */
+        .movie-section-title { margin-top: 40px; border-bottom: 1px solid #333; padding-bottom: 10px; text-align: center; }
+        
+        .movie-grid { 
+            display: flex; 
+            gap: 15px; 
+            margin-top: 20px; 
+            flex-wrap: wrap; 
+            justify-content: center; /* Centrado horizontal automático */
+        }
+        
+        .movie-card { background: #222; padding: 15px; cursor: pointer; border-radius: 8px; transition: transform 0.2s, box-shadow 0.2s; min-width: 200px; max-width: 250px; text-align: left; position: relative; flex-grow: 1; display: flex; flex-direction: column; }
+        .movie-card:hover { transform: scale(1.05); box-shadow: 0 10px 20px rgba(0,0,0,0.5); z-index: 10; }
+        .premium-badge { color: #E50914; font-size: 0.8rem; font-weight: bold; margin-top: 10px; display: block; letter-spacing: 1px; }
+        
+        .movie-thumbnail { width: 100%; height: 140px; object-fit: cover; border-radius: 4px; margin-bottom: 15px; background-color: #111; }
+        .movie-card h4 { margin: 0 0 5px 0; font-size: 1.1rem; }
+        .movie-desc { font-size: 0.85rem; color: #aaa; line-height: 1.4; margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; flex-grow: 1; }
+
+        /* Estilos para el hipervínculo de "Ver más" */
+        .see-more-container {
+            width: 100%; /* Fuerza el salto de línea en el flexbox */
+            text-align: center;
+            margin-top: 20px;
+        }
+        .see-more-link {
+            color: #E50914;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .see-more-link:hover {
+            color: #fff;
+            text-decoration: underline;
+        }
+
+        /* Layout tipo YouTube (Reproductor) */
+        .back-btn { background: transparent; border: 1px solid #fff; color: #fff; width: auto; padding: 10px 20px; border-radius: 4px; margin-top: 20px; margin-bottom: 20px; display: inline-block; }
+        .back-btn:hover { background: #fff; color: #000; }
+        
+        .yt-layout { display: flex; flex-direction: row; gap: 30px; max-width: 1600px; margin: 0 auto; align-items: flex-start; }
+        .yt-main { flex: 2.5; min-width: 0; }
+        .yt-sidebar { flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 15px; }
+        .yt-sidebar .movie-card { display: flex; flex-direction: column; text-align: left; padding: 15px; min-width: auto; margin: 0; }
+
+        :root { --plyr-color-main: #E50914; }
+        .plyr { border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+        .video-title { font-size: 1.8rem; margin-top: 20px; font-weight: bold; }
+
+        /* Nuevo estilo para la descripción del video */
+        .video-description { 
+            font-size: 1rem; 
+            color: #ccc; 
+            background-color: #222; 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin-top: 15px; 
+            line-height: 1.5; 
+        }
+
+        @media (max-width: 1000px) {
+            .yt-layout { flex-direction: column; }
+            .yt-sidebar { width: 100%; }
+        }
+        
+        /* Sidebar y Perfil */
+        /* Sidebar y Perfil */
+        .avatar-btn { background-color: #333; color: white; border: 2px solid #555; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; padding: 0; }
+        .avatar-btn:hover { border-color: #fff; background-color: #444; }
+        .sidebar { position: fixed; top: 0; right: -300px; width: 300px; height: 100vh; background-color: #000; box-shadow: -5px 0 15px rgba(0,0,0,0.8); transition: right 0.3s ease-in-out; z-index: 1000; padding: 30px 20px; box-sizing: border-box; display: flex; flex-direction: column; overflow-y: auto; }
+        .sidebar.open { right: 0; }
+        .close-btn { background: transparent; color: #fff; border: none; font-size: 2rem; align-self: flex-end; cursor: pointer; padding: 0; width: auto; margin-bottom: 20px; }
+        .close-btn:hover { color: #E50914; background: transparent; }
+        
+        /* Modificación aplicada aquí: */
+        .profile-content { flex-grow: 0; margin-bottom: 20px; }
+        
+        .user-name { font-weight: bold; font-size: 1.5rem; margin-bottom: 5px; }
+        .user-role { color: #aaa; font-size: 0.9rem; text-transform: uppercase; margin-bottom: 30px; }.overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; opacity: 0; pointer-events: none; transition: opacity 0.3s; }
+        .overlay.active { opacity: 1; pointer-events: all; }
+        input:disabled, button:disabled { background-color: #222; color: #777; cursor: not-allowed; }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; vertical-align: middle; margin-right: 8px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="overlay" class="overlay" onclick="toggleSidebar()"></div>
+
+    <div class="navbar">
+        <div class="logo" onclick="if(localStorage.getItem('jwt')) showMainView()">REPLAYS</div>
+        <button id="avatarBtn" class="avatar-btn hidden" onclick="toggleSidebar()">👤</button>
+    </div>
+
+    <div id="sideBar" class="sidebar">
+        <button class="close-btn" onclick="toggleSidebar()">&times;</button>
+        <div class="profile-content">
+            <div id="displayUser" class="user-name"></div>
+            <div id="displayRole" class="user-role"></div>
+            <hr style="border-color: #333; margin-bottom: 30px;">
+        </div>
+        <button id="logoutBtn">Cerrar Sesión</button>
+    </div>
+
+    <div id="loginView" class="container">
+        <div class="login-box">
+            <h2>Iniciar Sesión</h2>
+            <form id="loginForm" onsubmit="login(event)">
+                <input type="text" id="username" placeholder="Usuario (ej. bob o alice)" required>
+                <input type="password" id="password" placeholder="Contraseña" required>
+                <button type="submit">Entrar</button>
+            </form>
+            <p id="loginError" style="color: #E50914; margin-top: 10px;"></p>
+        </div>
+    </div>
+
+    <div id="mainView" class="container hidden">
+        <h2 class="movie-section-title">Contenido Premium ⭐</h2>
+        <div class="movie-grid" id="premiumGrid"></div>
+        
+        <h2 class="movie-section-title">Contenido Estándar</h2>
+        <div class="movie-grid" id="standardGrid"></div>
+    </div>
+
+    <div id="categoryView" class="container hidden">
+        <button class="back-btn" onclick="showMainView()">← Volver al Inicio</button>
+        <h2 id="categoryTitle" class="movie-section-title"></h2>
+        <div class="movie-grid" id="categoryGrid"></div>
+    </div>
+
+    <div id="playerView" class="container hidden">
+        <button class="back-btn" onclick="closePlayer()">← Volver al Catálogo</button>
+        
+        <div class="yt-layout">
+            <div class="yt-main">
+                <video id="videoPlayer" playsinline controls></video>
+                <div id="nowPlayingTitle" class="video-title"></div>
+                <p id="nowPlayingDesc" class="video-description"></p>
+            </div>
+
+            <div class="yt-sidebar">
+                <h3 style="margin-top: 0; text-align: center;">Recomendados</h3>
+                <div id="recommendationsGrid" class="movie-grid" style="justify-content: flex-start;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/plyr.js"></script>
+
+    <script>
+        // ==========================================
+        // ZERO HARDCODING: Rutas relativas agnósticas
+        // ==========================================
+        // Al estar despachados por Nginx, el navegador asume automáticamente el host y puerto actuales.
+        const BASE_URL = ""; 
+        const NGINX_URL = "/api";
+        
+        let cachedCatalog = [];
+        
+        const playerInstance = new Plyr('#videoPlayer', {
+            controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
+            // Sobrescribimos las dependencias externas apuntando a Nginx
+            iconUrl: '/static/plyr.svg',
+            blankVideo: '/static/blank.mp4'
+        });
+
+        function parseJwt(token) {
+            try {
+                const base64Url = token.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                }).join(''));
+                return JSON.parse(jsonPayload);
+            } catch (e) { return null; }
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sideBar').classList.toggle('open');
+            document.getElementById('overlay').classList.toggle('active');
+        }
+
+        async function login(event) {
+            event.preventDefault(); 
+            const userInp = document.getElementById('username');
+            const passInp = document.getElementById('password');
+            const submitBtn = document.querySelector('#loginForm button[type="submit"]');
+            const errorMsg = document.getElementById('loginError');
+
+            userInp.disabled = true; passInp.disabled = true; submitBtn.disabled = true;
+            const originalBtnText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<span class="spinner"></span> Autenticando...';
+            errorMsg.innerText = ""; 
+
+            const formData = new URLSearchParams();
+            formData.append('username', userInp.value);
+            formData.append('password', passInp.value);
+
+            try {
+                // Al usar /api/auth/login, el navegador inyecta la IP correcta automáticamente
+                const res = await fetch(`${NGINX_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem('jwt', data.access_token);
+                    userInp.value = ''; passInp.value = '';
+                    showMainView();
+                } else {
+                    errorMsg.innerText = "Credenciales incorrectas";
+                }
+            } catch (err) {
+                errorMsg.innerText = "Error de red. ¿Están los contenedores arriba?";
+            } finally {
+                userInp.disabled = false; passInp.disabled = false; submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnText;
+            }
+        }
+
+        function createMovieCard(movie) {
+            const card = document.createElement('div');
+            card.className = 'movie-card';
+            const isPremium = movie.required_role === 'premium_user';
+            
+            // Ruta relativa directa hacia Nginx
+            const imgSrc = `/media/${movie.movie_id}.jpg`;
+            const descText = movie.description ? movie.description : 'Sin descripción disponible.';
+
+            const fallbackSVG = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MDAiIGhlaWdodD0iMjI1Ij48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzMzIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiBmaWxsPSIjZmZmIj5Qcm9jZXNhbmRvLi4uPC90ZXh0Pjwvc3ZnPg==";
+
+            card.innerHTML = `
+                <img src="${imgSrc}" class="movie-thumbnail" alt="${movie.title}" loading="lazy" 
+                     onerror="this.onerror=null; this.src='${fallbackSVG}';">
+                <h4 style="margin-top: 0;">${movie.title}</h4>
+                <p class="movie-desc">${descText}</p>
+                ${isPremium ? '<span class="premium-badge">★ PREMIUM</span>' : ''}
+            `;
+            
+            card.onclick = () => playMovie(movie.movie_id);
+            return card;
+        }
+
+        // ==========================================
+        // NUEVA ARQUITECTURA: FUNCIONES DE RENDERIZADO MODULAR
+        // ==========================================
+        
+        function renderGrid(movieList, gridElement, limit = null, categoryRole = null, enableSeeMore = true) {
+            gridElement.innerHTML = '';
+            
+            const displayList = limit ? movieList.slice(0, limit) : movieList;
+            
+            displayList.forEach(movie => {
+                gridElement.appendChild(createMovieCard(movie));
+            });
+
+            if (enableSeeMore && limit && movieList.length > limit && categoryRole) {
+                const seeMoreDiv = document.createElement('div');
+                seeMoreDiv.className = 'see-more-container';
+                seeMoreDiv.innerHTML = `<span class="see-more-link" onclick="openCategoryView('${categoryRole}')">Ver más como estos...</span>`;
+                gridElement.appendChild(seeMoreDiv);
+            }
+        }
+
+        async function loadCatalog() {
+            try {
+                const res = await fetch(`${NGINX_URL}/catalog/movies`);
+                if (res.ok) {
+                    const data = await res.json();
+                    cachedCatalog = data.catalog; 
+                    
+                    const premiumMovies = cachedCatalog.filter(m => m.required_role === 'premium_user');
+                    const standardMovies = cachedCatalog.filter(m => m.required_role === 'standard_user');
+                    
+                    renderGrid(premiumMovies, document.getElementById('premiumGrid'), 3, 'premium_user', true);
+                    renderGrid(standardMovies, document.getElementById('standardGrid'), 3, 'standard_user', true);
+                }
+            } catch (err) { console.error("Error cargando catálogo", err); }
+        }
+
+        function openCategoryView(role) {
+            const movies = cachedCatalog.filter(m => m.required_role === role);
+            const grid = document.getElementById('categoryGrid');
+            const title = document.getElementById('categoryTitle');
+            
+            title.innerText = role === 'premium_user' ? 'Catálogo Completo: Premium ⭐' : 'Catálogo Completo: Estándar';
+            
+            renderGrid(movies, grid, null, null, false);
+            
+            document.getElementById('mainView').classList.add('hidden');
+            document.getElementById('playerView').classList.add('hidden');
+            document.getElementById('categoryView').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ==========================================
+        // ARQUITECTURA INFINITE SCROLL (SIDEBAR)
+        // ==========================================
+        
+        let currentRecs = [];
+        let recsLoaded = 0;
+        const RECS_PER_PAGE = 3;
+        let observerObj = null;
+
+        function renderRecommendations(currentMovieId) {
+            const recGrid = document.getElementById('recommendationsGrid');
+            recGrid.innerHTML = '';
+            recsLoaded = 0;
+            
+            const availableMovies = cachedCatalog.filter(m => m.movie_id !== currentMovieId);
+            currentRecs = availableMovies.sort(() => 0.5 - Math.random());
+            
+            loadMoreRecommendations();
+            setupScrollSensor(recGrid);
+        }
+
+        function loadMoreRecommendations() {
+            const recGrid = document.getElementById('recommendationsGrid');
+            const nextBatch = currentRecs.slice(recsLoaded, recsLoaded + RECS_PER_PAGE);
+            
+            nextBatch.forEach(movie => {
+                recGrid.appendChild(createMovieCard(movie));
+            });
+            
+            recsLoaded += nextBatch.length;
+        }
+
+        function setupScrollSensor(gridElement) {
+            if (observerObj) observerObj.disconnect();
+
+            const sentinel = document.createElement('div');
+            sentinel.style.height = '20px';
+            sentinel.style.width = '100%';
+            gridElement.appendChild(sentinel);
+
+            observerObj = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && recsLoaded < currentRecs.length) {
+                    gridElement.removeChild(sentinel); 
+                    loadMoreRecommendations(); 
+                    
+                    if (recsLoaded < currentRecs.length) {
+                        gridElement.appendChild(sentinel);
+                    }
+                }
+            }, { root: null, rootMargin: '100px', threshold: 0.1 });
+
+            observerObj.observe(sentinel);
+        }
+
+        function playMovie(movieId) {
+            const token = localStorage.getItem('jwt');
+            const payload = parseJwt(token);
+            if (!payload) return;
+
+            const movie = cachedCatalog.find(m => m.movie_id === movieId);
+            if (!movie) return;
+
+            if (movie.required_role === 'premium_user' && payload.role === 'standard_user') {
+                alert(`Acceso Denegado: '${movie.title}' es exclusivo para usuarios Premium.`);
+                return;
+            }
+
+            document.getElementById('mainView').classList.add('hidden');
+            document.getElementById('categoryView').classList.add('hidden');
+            document.getElementById('playerView').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            document.getElementById('nowPlayingTitle').innerText = movie.title;
+            document.getElementById('nowPlayingDesc').innerText = movie.description || 'Sin descripción disponible.';
+
+            let recoveryAttempts = 0;
+            const MAX_FAST_ATTEMPTS = 5;   // Reintentos rápidos (1s, 2s, 3s, 4s, 5s)
+            const SLOW_RETRY_INTERVAL = 8000; // Después de agotar rápidos, reintenta cada 8s
+            let crashTime = 0;
+            let isRecovering = false;
+            let slowRetryTimer = null;     // Referencia al timer de polling para poder cancelarlo
+
+            playerInstance.off('error');
+            playerInstance.off('canplay');
+            playerInstance.off('playing');
+
+            function loadSource(src) {
+                playerInstance.source = {
+                    type: 'video',
+                    sources: [{ src: src, type: 'video/mp4' }]
+                };
+            }
+
+            function attemptReconnect() {
+                loadSource(`/api/stream/stream/${movieId}?token=${token}&cb=${Date.now()}`);
+                setTimeout(() => { isRecovering = false; }, 500);
+            }
+
+            function startSlowPolling() {
+                // Evitar múltiples timers en paralelo
+                if (slowRetryTimer) return;
+
+                console.warn(`[Chaos] Cluster no disponible. Reintentando cada ${SLOW_RETRY_INTERVAL/1000}s en background...`);
+
+                slowRetryTimer = setInterval(() => {
+                    if (isRecovering) return;
+                    isRecovering = true;
+                    console.warn(`[Chaos] Reintento lento... (cluster puede estar recuperándose)`);
+                    attemptReconnect();
+                }, SLOW_RETRY_INTERVAL);
+            }
+
+            function stopSlowPolling() {
+                if (slowRetryTimer) {
+                    clearInterval(slowRetryTimer);
+                    slowRetryTimer = null;
+                }
+            }
+
+            loadSource(`/api/stream/stream/${movieId}?token=${token}`);
+            playerInstance.play();
+
+            playerInstance.on('error', () => {
+                if (isRecovering) return;
+
+                if (recoveryAttempts === 0) {
+                    crashTime = playerInstance.currentTime;
+                }
+
+                isRecovering = true;
+                recoveryAttempts++;
+
+                if (recoveryAttempts <= MAX_FAST_ATTEMPTS) {
+                    // Fase 1: reintentos rápidos con backoff exponencial
+                    stopSlowPolling(); // Por si acaso había un slow timer corriendo
+                    const waitTime = recoveryAttempts * 1000;
+                    console.warn(`[Chaos Tolerated] Intento rápido ${recoveryAttempts}/${MAX_FAST_ATTEMPTS} en ${waitTime}ms...`);
+                    setTimeout(() => { attemptReconnect(); }, waitTime);
+                } else {
+                    // Fase 2: reintentos lentos en background, sin límite
+                    startSlowPolling();
+                    setTimeout(() => { isRecovering = false; }, 500);
+                }
+            });
+
+            playerInstance.on('canplay', () => {
+                if (recoveryAttempts > 0) {
+                    playerInstance.currentTime = crashTime;
+                    playerInstance.play();
+                }
+            });
+
+            playerInstance.on('playing', () => {
+                if (recoveryAttempts > 0) {
+                    setTimeout(() => {
+                        if (recoveryAttempts > 0) {
+                            // Recuperación exitosa: limpiar todo
+                            stopSlowPolling();
+                            recoveryAttempts = 0;
+                            isRecovering = false;
+                            console.log("¡Recuperación consolidada! Flujo estable en nodo de respaldo.");
+                        }
+                    }, 3000);
+                }
+            });
+
+            renderRecommendations(movieId);
+        }
+
+        function closePlayer() {
+            // El stopSlowPolling está encapsulado en playMovie, así que
+            // simplemente detenemos el player — Plyr limpiará los handlers.
+            if (playerInstance.playing) playerInstance.stop();
+            playerInstance.source = null;
+            showMainView();
+        }
+
+        function showMainView() {
+            const token = localStorage.getItem('jwt');
+            const payload = parseJwt(token);
+            
+            if (playerInstance.playing) {
+                playerInstance.stop();
+            }
+            playerInstance.source = null; 
+
+            if (payload) {
+                document.getElementById('displayUser').innerText = `@${payload.sub}`;
+                const roleFormatted = payload.role.replace('_', ' ');
+                document.getElementById('displayRole').innerText = `⭐ ${roleFormatted}`;
+            }
+
+            document.getElementById('loginView').classList.add('hidden');
+            document.getElementById('playerView').classList.add('hidden');
+            document.getElementById('categoryView').classList.add('hidden');
+            
+            document.getElementById('mainView').classList.remove('hidden');
+            document.getElementById('avatarBtn').classList.remove('hidden');
+            
+            if (cachedCatalog.length === 0) loadCatalog();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        document.getElementById('logoutBtn').onclick = () => {
+            localStorage.removeItem('jwt');
+            cachedCatalog = []; 
+            if (observerObj) observerObj.disconnect();
+            
+            if (playerInstance.playing) playerInstance.stop();
+            playerInstance.source = null;
+            
+            document.getElementById('username').value = "";
+            document.getElementById('password').value = "";
+            document.getElementById('sideBar').classList.remove('open');
+            document.getElementById('overlay').classList.remove('active');
+            
+            document.getElementById('mainView').classList.add('hidden');
+            document.getElementById('categoryView').classList.add('hidden');
+            document.getElementById('playerView').classList.add('hidden');
+            document.getElementById('avatarBtn').classList.add('hidden');
+            document.getElementById('loginView').classList.remove('hidden');
+        };
+
+        if (localStorage.getItem('jwt')) { showMainView(); }
+    </script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+services:
+  # ==========================================
+  # CAPA DE BALANCEO DE CARGA (NGINX)
+  # ==========================================
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8888:80"
+      - "8443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./media:/media:ro  # Nginx ahora puede despachar directamente las miniaturas .jpg
+      - ./static:/static:ro
+    depends_on:
+      - auth-service
+      - catalog-service
+      - streaming-service-1
+      - streaming-service-2
+    networks:
+      - streaming_network
+
+  # ==========================================
+  # MICROSERVICIOS BASE
+  # ==========================================
+  auth-service:
+    build: ./auth_service
+    env_file:
+      - .env  # Inyecta automáticamente MONGO_URI, DB_NAME y PRIVATE_KEY_PATH
+    volumes:
+      - ./auth_service:/app
+      - ./secrets/private.pem:/secrets/private.pem:ro
+    networks:
+      - streaming_network
+    # Patrón Bootstrapping: Espera a Mongo, siembra datos y luego levanta la API
+    command: >
+      sh -c "sleep 15 && python seed.py && uvicorn main:app --host 0.0.0.0 --port 8000"
+
+  catalog-service:
+    build: ./catalog_service
+    env_file:
+      - .env  # Inyecta MONGO_URI y DB_NAME
+    volumes:
+      - ./catalog_service:/app
+    networks:
+      - streaming_network
+    # Patrón Bootstrapping: Espera a Mongo, siembra datos y luego levanta la API
+    command: >
+      sh -c "sleep 15 && python seed.py && uvicorn main:app --host 0.0.0.0 --port 8000"
+
+  streaming-service-1:
+    build: ./streaming_service
+    env_file:
+      - .env
+    volumes:
+      - ./streaming_service:/app
+      - ./secrets/public.pem:/secrets/public.pem:ro
+      - ./media:/media:ro 
+    networks:
+      - streaming_network
+    # ARQUITECTURA: Aumentamos a 4 workers para soportar reconexiones agresivas
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+
+  streaming-service-2:
+    build: ./streaming_service
+    env_file:
+      - .env
+    volumes:
+      - ./streaming_service:/app
+      - ./secrets/public.pem:/secrets/public.pem:ro
+      - ./media:/media:ro  
+    networks:
+      - streaming_network
+    # ARQUITECTURA: Aumentamos a 4 workers para soportar reconexiones agresivas
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    
+  # ==========================================
+  # CAPA DE PERSISTENCIA (MONGODB REPLICA SET)
+  # ==========================================
+  mongo-primary:
+    image: mongo:6.0
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo_data_primary:/data/db  # Persistencia de estado
+    networks:
+      - streaming_network
+
+  mongo-sec1:
+    image: mongo:6.0
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo_data_sec1:/data/db     # Persistencia de estado
+    networks:
+      - streaming_network
+
+  mongo-sec2:
+    image: mongo:6.0
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongo_data_sec2:/data/db     # Persistencia de estado
+    networks:
+      - streaming_network
+
+  # Script de inicialización automática del Replica Set
+  mongo-setup:
+    image: mongo:6.0
+    depends_on:
+      - mongo-primary
+      - mongo-sec1
+      - mongo-sec2
+    networks:
+      - streaming_network
+    entrypoint: >
+      bash -c "
+      until mongosh --host mongo-primary:27017 --eval 'db.runCommand({ping: 1})' > /dev/null 2>&1; do
+        echo 'Esperando a mongo-primary...'; sleep 3;
+      done &&
+      mongosh --host mongo-primary:27017 --eval '
+      rs.initiate({
+        _id: \"rs0\",
+        members: [
+          {_id: 0, host: \"mongo-primary:27017\", priority: 2},
+          {_id: 1, host: \"mongo-sec1:27017\", priority: 1},
+          {_id: 2, host: \"mongo-sec2:27017\", priority: 1}
+        ]
+      })'
+      "
+      
+  # ==========================================
+  # FRONTEND
+  # ==========================================
+  frontend:
+      build: ./frontend
+      networks:
+        - streaming_network
+      depends_on:
+        - nginx
+
+  # ==========================================
+  # PIPELINE DE PROCESAMIENTO ASÍNCRONO
+  # ==========================================
+  ingestion-worker:
+    build: ./ingestion_worker
+    env_file:
+      - .env  # Inyecta MEDIA_DIR automáticamente
+    environment:
+      - SCAN_INTERVAL=60  # Escanea la carpeta cada 60 segundos
+    volumes:
+      - ./media:/media:rw  # Modo rw (Read/Write) para poder guardar los .jpg
+    networks:
+      - streaming_network
+
+networks:
+  streaming_network:
+    driver: bridge
+
+# ==========================================
+# DECLARACIÓN DE VOLÚMENES PERSISTENTES
+# ==========================================
+volumes:
+  mongo_data_primary:
+  mongo_data_sec1:
+  mongo_data_sec2:
